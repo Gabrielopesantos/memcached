@@ -2260,7 +2260,7 @@ item* limited_get_locked(const char *key, size_t nkey, LIBEVENT_THREAD *t, bool 
  * returns a response string to send back to the client.
  */
 enum delta_result_type do_add_delta(LIBEVENT_THREAD *t, const char *key, const size_t nkey,
-                                    const bool incr, const int64_t delta,
+                                    const int opcode, const int64_t delta,
                                     char *buf, uint64_t *cas,
                                     const uint32_t hv,
                                     item **it_ret) {
@@ -2297,23 +2297,35 @@ enum delta_result_type do_add_delta(LIBEVENT_THREAD *t, const char *key, const s
         return NON_NUMERIC;
     }
 
-    if (incr) {
-        value += delta;
-        //MEMCACHED_COMMAND_INCR(c->sfd, ITEM_key(it), it->nkey, value);
-    } else {
+    switch (opcode) {
+    case 0:
         if(delta > value) {
             value = 0;
         } else {
             value -= delta;
         }
         //MEMCACHED_COMMAND_DECR(c->sfd, ITEM_key(it), it->nkey, value);
+        break;
+    case 1:
+        value += delta;
+        //MEMCACHED_COMMAND_INCR(c->sfd, ITEM_key(it), it->nkey, value);
+        break;
+    case 2:
+        value *= delta;
+        break;
     }
 
     pthread_mutex_lock(&t->stats.mutex);
-    if (incr) {
+    switch (opcode) {
+    case 1:
         t->stats.slab_stats[ITEM_clsid(it)].incr_hits++;
-    } else {
+        break;
+    case 0:
         t->stats.slab_stats[ITEM_clsid(it)].decr_hits++;
+        break;
+    case 2:
+        t->stats.slab_stats[ITEM_clsid(it)].mult_hits++;
+        break;
     }
     pthread_mutex_unlock(&t->stats.mutex);
 
